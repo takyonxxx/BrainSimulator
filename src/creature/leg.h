@@ -35,9 +35,9 @@ public:
     bool isOnGround() const { return m_onGround; }
 
     // Segment data
-    LegSegment coxa  = {0.12f, 0, 0};  // Short hip
-    LegSegment femur = {0.20f, 0, 0};  // Upper leg
-    LegSegment tibia = {0.22f, 0, 0};  // Lower leg
+    LegSegment coxa  = {0.18f, 0, 0};  // Hip - reaches outward
+    LegSegment femur = {0.30f, 0, 0};  // Upper leg
+    LegSegment tibia = {0.32f, 0, 0};  // Lower leg (longest)
 
     float attachX = 0, attachZ = 0;
     float outwardAngle = 0;  // Direction leg points (XZ plane)

@@ -88,18 +88,18 @@ void Leg::getJointPositions(float& hipX, float& hipY, float& hipZ,
     hipZ = attachZ + outZ * coxa.length + swingZ * coxa.angle * coxa.length;
 
     // Femur: extends outward and downward from hip
-    // femur.angle: 0=horizontal outward, positive=more forward/up
-    float femurOutLen = femur.length * cosf(femur.angle) * 0.8f;
-    float femurDownLen = -femur.length * sinf(femur.angle) * 0.6f - femur.length * 0.3f;
+    // femur.angle: 0=horizontal outward, positive=more up
+    float femurOutLen = femur.length * cosf(femur.angle);
+    float femurDownLen = -femur.length * 0.35f - femur.length * sinf(femur.angle) * 0.4f;
 
     kneeX = hipX + outX * femurOutLen;
     kneeY = hipY + femurDownLen;
     kneeZ = hipZ + outZ * femurOutLen;
 
-    // Tibia: extends from knee, mostly downward
-    // tibia.angle: negative=down, 0=horizontal
-    float tibiaOutLen = tibia.length * cosf(tibia.angle) * 0.3f;
-    float tibiaDownLen = tibia.length * sinf(tibia.angle); // negative = down
+    // Tibia: extends from knee outward and down to ground
+    // tibia.angle: negative=down
+    float tibiaOutLen = tibia.length * cosf(tibia.angle) * 0.5f;
+    float tibiaDownLen = tibia.length * sinf(tibia.angle);
 
     footX = kneeX + outX * tibiaOutLen;
     footY = kneeY + tibiaDownLen;

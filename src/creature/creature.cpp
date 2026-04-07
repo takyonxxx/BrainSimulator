@@ -10,26 +10,30 @@ void Creature::initialize()
     m_brain.initialize();
 
     // 6 legs: 3 pairs (front, middle, rear)
-    // Each pair: left leg points left (-X), right leg points right (+X)
-    // Front legs angle slightly forward, rear slightly backward
+    // outDir: unit vector pointing outward from body
     struct LegDef {
-        float ax, az;       // Attach position on body
-        float angle;        // Outward direction (radians: 0=+X right, PI=-X left)
+        float ax, az;        // Attach point on body
+        float outX, outZ;    // Outward direction
         bool left;
     };
+
+    float hw = BODY_WIDTH * 0.5f;  // Half body width
+
     LegDef defs[6] = {
-        // Left legs (point toward -X, i.e. angle = PI)
-        {-BODY_WIDTH * 0.45f,  0.16f, (float)M_PI + 0.4f, true},   // L-front (slightly forward)
-        {-BODY_WIDTH * 0.50f,  0.00f, (float)M_PI,        true},   // L-mid   (straight out)
-        {-BODY_WIDTH * 0.45f, -0.16f, (float)M_PI - 0.4f, true},   // L-rear  (slightly backward)
-        // Right legs (point toward +X, i.e. angle = 0)
-        { BODY_WIDTH * 0.45f,  0.16f, -0.4f,              false},  // R-front
-        { BODY_WIDTH * 0.50f,  0.00f,  0.0f,              false},  // R-mid
-        { BODY_WIDTH * 0.45f, -0.16f,  0.4f,              false},  // R-rear
+        // Left legs point left (-X) with slight forward/backward angle
+        {-hw,  0.16f,  -1.0f,  0.4f,  true},   // L-front: left + slightly forward
+        {-hw,  0.00f,  -1.0f,  0.0f,  true},   // L-mid:   straight left
+        {-hw, -0.16f,  -1.0f, -0.4f,  true},   // L-rear:  left + slightly backward
+        // Right legs point right (+X) with slight forward/backward angle
+        { hw,  0.16f,   1.0f,  0.4f,  false},  // R-front: right + slightly forward
+        { hw,  0.00f,   1.0f,  0.0f,  false},  // R-mid:   straight right
+        { hw, -0.16f,   1.0f, -0.4f,  false},  // R-rear:  right + slightly backward
     };
 
     for (int i = 0; i < 6; i++) {
-        m_legs[i].init(defs[i].ax, defs[i].az, defs[i].angle, defs[i].left, i);
+        m_legs[i].init(defs[i].ax, defs[i].az,
+                       defs[i].outX, defs[i].outZ,
+                       defs[i].left, i);
     }
 
     m_x = 0; m_z = 0; m_y = 0.2f;
@@ -86,7 +90,7 @@ void Creature::feedSensoryInput()
     // Proprioceptive (body bend and leg positions)
     std::vector<float> jointAngles;
     for (auto& leg : m_legs) {
-        jointAngles.push_back(leg.coxa.angle);
+        jointAngles.push_back(leg.swingAngle);
     }
     m_brain.setProprioceptiveInput(jointAngles);
 

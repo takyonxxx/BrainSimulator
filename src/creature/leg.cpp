@@ -2,55 +2,61 @@
 #include "leg.h"
 #include <algorithm>
 
-void Leg::init(float ax, float az, float outAngle, bool left, int legIndex)
+void Leg::init(float ax, float az, float outDirX, float outDirZ,
+               bool left, int legIndex)
 {
     attachX = ax;
     attachZ = az;
-    outwardAngle = outAngle;
     leftSide = left;
     m_legIndex = legIndex;
 
-    // Tripod gait: legs 0,3,4 in phase; legs 1,2,5 opposite
-    // (L-front, R-mid, L-rear) vs (R-front, L-mid, R-rear)
+    // Normalize outward direction
+    float len = sqrtf(outDirX * outDirX + outDirZ * outDirZ);
+    m_outX = outDirX / len;
+    m_outZ = outDirZ / len;
+
+    // Forward direction = perpendicular to outward (rotated 90 CCW in XZ)
+    m_fwdX = -m_outZ;
+    m_fwdZ =  m_outX;
+
+    // Tripod gait: 0,3,4 group A; 1,2,5 group B
     bool groupA = (legIndex == 0 || legIndex == 3 || legIndex == 4);
     m_phase = groupA ? 0.0f : (float)M_PI;
 
-    // Initial pose: legs spread outward and down
-    coxa.angle = 0;
-    femur.angle = 0.3f;    // Slightly forward/down
-    tibia.angle = -0.7f;   // Angled down toward ground
+    // Rest pose
+    swingAngle = 0;
+    liftAngle = 0;
+    kneeAngle = 0;
 }
 
 void Leg::update(float dt, float motorSignal)
 {
     float speed = (std::max)(0.01f, std::abs(motorSignal));
-    float stepFreq = 3.0f;
-
-    m_phase += stepFreq * speed * dt * 2.0f * (float)M_PI;
-    if (m_phase > 2.0f * (float)M_PI) m_phase -= 2.0f * (float)M_PI;
-
-    float swing = sinf(m_phase);         // -1..1 forward/backward
-    float liftPhase = cosf(m_phase);
-    float lift = (std::max)(0.0f, liftPhase);  // 0..1 lift during swing
-
     float dir = (motorSignal >= 0) ? 1.0f : -1.0f;
 
-    // Coxa: swing forward/backward (horizontal rotation)
-    coxa.targetAngle = swing * 0.35f * dir;
-    coxa.angle += (coxa.targetAngle - coxa.angle) * 12.0f * dt;
-    coxa.angle = (std::clamp)(coxa.angle, -0.5f, 0.5f);
+    // Advance gait phase
+    m_phase += 3.0f * speed * dt * 2.0f * (float)M_PI;
+    if (m_phase > 2.0f * (float)M_PI) m_phase -= 2.0f * (float)M_PI;
 
-    // Femur: slight lift during swing phase
-    femur.targetAngle = 0.3f + lift * 0.35f;
-    femur.angle += (femur.targetAngle - femur.angle) * 10.0f * dt;
-    femur.angle = (std::clamp)(femur.angle, 0.0f, 0.9f);
+    float swingCycle = sinf(m_phase);
+    float liftCycle = (std::max)(0.0f, cosf(m_phase));  // Lift during swing forward
 
-    // Tibia: fold more when lifted, extend when on ground
-    tibia.targetAngle = -0.7f - lift * 0.25f + (1.0f - lift) * 0.1f;
-    tibia.angle += (tibia.targetAngle - tibia.angle) * 10.0f * dt;
-    tibia.angle = (std::clamp)(tibia.angle, -1.3f, 0.0f);
+    // Coxa swing: forward/backward
+    float targetSwing = swingCycle * 0.4f * dir;
+    swingAngle += (targetSwing - swingAngle) * 12.0f * dt;
+    swingAngle = (std::clamp)(swingAngle, -0.5f, 0.5f);
 
-    // Check ground contact
+    // Femur lift: raise leg during swing phase
+    float targetLift = liftCycle * 0.4f;  // 0 to 0.4 rad lift
+    liftAngle += (targetLift - liftAngle) * 10.0f * dt;
+    liftAngle = (std::clamp)(liftAngle, -0.1f, 0.5f);
+
+    // Knee bend: fold slightly when lifted
+    float targetKnee = liftCycle * 0.3f;
+    kneeAngle += (targetKnee - kneeAngle) * 10.0f * dt;
+    kneeAngle = (std::clamp)(kneeAngle, -0.1f, 0.5f);
+
+    // Ground contact check
     float hx, hy, hz, kx, ky, kz, fx, fy, fz;
     getJointPositions(hx, hy, hz, kx, ky, kz, fx, fy, fz);
     m_onGround = (fy <= 0.01f);
@@ -62,9 +68,6 @@ void Leg::applyGroundContact(float groundY)
     float hx, hy, hz, kx, ky, kz, fx, fy, fz;
     getJointPositions(hx, hy, hz, kx, ky, kz, fx, fy, fz);
     if (fy < groundY) {
-        // Pull tibia up slightly to prevent ground penetration
-        tibia.angle += (groundY - fy) * 1.5f;
-        tibia.angle = (std::clamp)(tibia.angle, -1.3f, 0.0f);
         m_onGround = true;
         m_groundForce = (groundY - fy) * 100.0f;
     }
@@ -74,34 +77,28 @@ void Leg::getJointPositions(float& hipX, float& hipY, float& hipZ,
                              float& kneeX, float& kneeY, float& kneeZ,
                              float& footX, float& footY, float& footZ) const
 {
-    // Outward direction in XZ plane
-    float outX = cosf(outwardAngle);
-    float outZ = sinf(outwardAngle);
+    // === HIP (end of coxa) ===
+    // Coxa extends outward from body + swings forward/backward
+    hipX = attachX + m_outX * coxaLen + m_fwdX * swingAngle * coxaLen;
+    hipY = 0.0f;
+    hipZ = attachZ + m_outZ * coxaLen + m_fwdZ * swingAngle * coxaLen;
 
-    // Perpendicular direction (for swing)
-    float swingX = -sinf(outwardAngle);
-    float swingZ = cosf(outwardAngle);
+    // === KNEE (end of femur) ===
+    // Femur goes outward and DOWN from hip
+    // liftAngle raises the knee (less downward drop)
+    float femurDrop = -femurLen * (0.5f - liftAngle * 0.6f);  // Y component (negative = down)
+    float femurOut  =  femurLen * 0.85f;                       // Outward reach
 
-    // Hip/coxa: swings forward/backward, extends outward
-    hipX = attachX + outX * coxa.length + swingX * coxa.angle * coxa.length;
-    hipY = 0.0f;  // Hip is at body height (0 in local body space)
-    hipZ = attachZ + outZ * coxa.length + swingZ * coxa.angle * coxa.length;
+    kneeX = hipX + m_outX * femurOut;
+    kneeY = hipY + femurDrop;
+    kneeZ = hipZ + m_outZ * femurOut;
 
-    // Femur: extends outward and downward from hip
-    // femur.angle: 0=horizontal outward, positive=more up
-    float femurOutLen = femur.length * cosf(femur.angle);
-    float femurDownLen = -femur.length * 0.35f - femur.length * sinf(femur.angle) * 0.4f;
+    // === FOOT (end of tibia) ===
+    // Tibia goes from knee mostly DOWN to ground, slightly outward
+    float tibiaDrop = -tibiaLen * (0.75f - kneeAngle * 0.5f);  // Mostly down
+    float tibiaOut  =  tibiaLen * 0.35f;                        // Slight outward
 
-    kneeX = hipX + outX * femurOutLen;
-    kneeY = hipY + femurDownLen;
-    kneeZ = hipZ + outZ * femurOutLen;
-
-    // Tibia: extends from knee outward and down to ground
-    // tibia.angle: negative=down
-    float tibiaOutLen = tibia.length * cosf(tibia.angle) * 0.5f;
-    float tibiaDownLen = tibia.length * sinf(tibia.angle);
-
-    footX = kneeX + outX * tibiaOutLen;
-    footY = kneeY + tibiaDownLen;
-    footZ = kneeZ + outZ * tibiaOutLen;
+    footX = kneeX + m_outX * tibiaOut;
+    footY = kneeY + tibiaDrop;
+    footZ = kneeZ + m_outZ * tibiaOut;
 }
